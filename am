@@ -1,0 +1,358 @@
+#!/usr/bin/env bash
+# am - Agent Manager
+# A CLI tool for managing multiple AI coding agent sessions
+
+set -euo pipefail
+
+# Version
+AM_VERSION="0.1.0"
+
+# Determine script directory
+AM_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AM_LIB_DIR="$AM_SCRIPT_DIR/lib"
+
+# Usage information (no dependencies needed)
+usage() {
+    cat <<'EOF'
+am - Agent Manager v0.1.0
+
+Manage multiple AI coding agent sessions with an interactive fzf interface.
+
+USAGE:
+    am [command] [options]
+
+COMMANDS:
+    (none)          Open interactive session browser (default)
+    list            List all sessions (same as no command)
+    list --json     Output sessions as JSON
+    new [dir]       Create a new agent session
+    attach <name>   Attach to a session by name
+    kill <name>     Kill a session
+    kill --all      Kill all agent-manager sessions
+    info <name>     Show detailed session info
+    status          Show summary of all sessions
+    help            Show this help message
+
+OPTIONS FOR 'new':
+    -t, --type      Agent type: claude (default), gemini, aider
+    -n, --name      Custom task description
+    -d, --dir       Directory (can also be positional arg)
+
+KEYBINDINGS (in interactive mode):
+    Enter           Attach to selected session
+    Ctrl-N          Create new session
+    Ctrl-X          Kill selected session
+    Ctrl-R          Refresh session list
+    Ctrl-P          Toggle preview panel
+
+EXAMPLES:
+    am                              # Open interactive browser
+    am new                          # New claude session in current dir
+    am new ~/code/myproject         # New session in specific directory
+    am new -t gemini ~/code/proj    # New gemini session
+    am attach am-abc123             # Attach to session by name
+    am kill am-abc123               # Kill specific session
+
+DEPENDENCIES:
+    tmux >= 3.0, fzf >= 0.40, jq, git
+
+CONFIGURATION:
+    Sessions are stored in: ~/.agent-manager/
+
+EOF
+}
+
+# Handle help/version before loading libs (no deps needed)
+case "${1:-}" in
+    help|--help|-h)
+        usage
+        exit 0
+        ;;
+    version|--version|-v)
+        echo "am version $AM_VERSION"
+        exit 0
+        ;;
+esac
+
+# Now source all library files (they check dependencies)
+source "$AM_LIB_DIR/utils.sh"
+source "$AM_LIB_DIR/tmux.sh"
+source "$AM_LIB_DIR/registry.sh"
+source "$AM_LIB_DIR/agents.sh"
+source "$AM_LIB_DIR/fzf.sh"
+
+# Command: list
+cmd_list() {
+    local json=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --json|-j)
+                json=true
+                shift
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    if $json; then
+        fzf_list_json
+    else
+        # Interactive mode
+        local result
+        result=$(fzf_main)
+
+        if [[ "$result" == "__NEW_SESSION__" ]]; then
+            # User pressed Ctrl-N, create new session
+            cmd_new
+        elif [[ -n "$result" ]]; then
+            # Attach to selected session
+            tmux_attach "$result"
+        fi
+    fi
+}
+
+# Command: new
+cmd_new() {
+    local directory="."
+    local agent_type="claude"
+    local task=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -t|--type)
+                agent_type="$2"
+                shift 2
+                ;;
+            -n|--name|--task)
+                task="$2"
+                shift 2
+                ;;
+            -d|--dir)
+                directory="$2"
+                shift 2
+                ;;
+            -h|--help)
+                echo "Usage: am new [options] [directory]"
+                echo ""
+                echo "Options:"
+                echo "  -t, --type    Agent type (claude, gemini, aider)"
+                echo "  -n, --name    Task description"
+                echo "  -d, --dir     Working directory"
+                return 0
+                ;;
+            -*)
+                log_error "Unknown option: $1"
+                return 1
+                ;;
+            *)
+                directory="$1"
+                shift
+                ;;
+        esac
+    done
+
+    # Prompt for task description if not provided
+    if [[ -z "$task" ]]; then
+        echo -n "Task description (optional): "
+        read -r task
+    fi
+
+    # Launch agent
+    local session_name
+    session_name=$(agent_launch "$directory" "$agent_type" "$task")
+
+    if [[ -n "$session_name" ]]; then
+        # Ask if user wants to attach
+        echo -n "Attach to session? [Y/n] "
+        read -r answer
+        if [[ "$answer" != "n" && "$answer" != "N" ]]; then
+            tmux_attach "$session_name"
+        fi
+    fi
+}
+
+# Command: attach
+cmd_attach() {
+    local name="${1:-}"
+
+    if [[ -z "$name" ]]; then
+        log_error "Session name required"
+        echo "Usage: am attach <session-name>"
+        return 1
+    fi
+
+    # Try exact match first
+    if tmux_session_exists "$name"; then
+        tmux_attach "$name"
+        return 0
+    fi
+
+    # Try with prefix
+    if tmux_session_exists "${AM_SESSION_PREFIX}${name}"; then
+        tmux_attach "${AM_SESSION_PREFIX}${name}"
+        return 0
+    fi
+
+    # Fuzzy match
+    local matches
+    matches=$(tmux_list_am_sessions | grep -i "$name" || true)
+    local count
+    count=$(echo "$matches" | grep -c . || echo 0)
+
+    if [[ $count -eq 0 ]]; then
+        log_error "No session found matching: $name"
+        return 1
+    elif [[ $count -eq 1 ]]; then
+        tmux_attach "$matches"
+    else
+        log_info "Multiple matches found:"
+        echo "$matches"
+        echo ""
+        echo -n "Enter session name: "
+        read -r selected
+        if [[ -n "$selected" ]]; then
+            tmux_attach "$selected"
+        fi
+    fi
+}
+
+# Command: kill
+cmd_kill() {
+    if [[ $# -eq 0 ]]; then
+        log_error "Session name required (or --all)"
+        echo "Usage: am kill <session-name> | --all"
+        return 1
+    fi
+
+    case "$1" in
+        --all|-a)
+            echo -n "Kill ALL agent-manager sessions? [y/N] "
+            read -r answer
+            if [[ "$answer" == "y" || "$answer" == "Y" ]]; then
+                local count
+                count=$(agent_kill_all)
+                log_success "Killed $count sessions"
+            else
+                log_info "Aborted"
+            fi
+            ;;
+        *)
+            local name="$1"
+
+            # Try exact match first
+            if tmux_session_exists "$name"; then
+                agent_kill "$name"
+                return 0
+            fi
+
+            # Try with prefix
+            if tmux_session_exists "${AM_SESSION_PREFIX}${name}"; then
+                agent_kill "${AM_SESSION_PREFIX}${name}"
+                return 0
+            fi
+
+            log_error "Session not found: $name"
+            return 1
+            ;;
+    esac
+}
+
+# Command: info
+cmd_info() {
+    local name="${1:-}"
+
+    if [[ -z "$name" ]]; then
+        log_error "Session name required"
+        echo "Usage: am info <session-name>"
+        return 1
+    fi
+
+    # Try with prefix if needed
+    if ! tmux_session_exists "$name" && tmux_session_exists "${AM_SESSION_PREFIX}${name}"; then
+        name="${AM_SESSION_PREFIX}${name}"
+    fi
+
+    if ! tmux_session_exists "$name"; then
+        log_error "Session not found: $name"
+        return 1
+    fi
+
+    echo "${BOLD}Session: $name${RESET}"
+    echo ""
+    agent_info "$name"
+}
+
+# Command: status
+cmd_status() {
+    registry_gc >/dev/null 2>&1
+
+    local count
+    count=$(tmux_count_am_sessions)
+
+    echo "${BOLD}Agent Manager Status${RESET}"
+    echo "===================="
+    echo ""
+    echo "Active sessions: $count"
+    echo ""
+
+    if [[ $count -gt 0 ]]; then
+        echo "${BOLD}Sessions:${RESET}"
+        fzf_list_simple
+    fi
+}
+
+# Main entry point
+main() {
+    # Initialize
+    am_init
+
+    # Check dependencies
+    require_cmd tmux
+    require_cmd fzf
+    require_cmd jq
+
+    # Parse command
+    local cmd="${1:-list}"
+
+    case "$cmd" in
+        list|ls|"")
+            shift 2>/dev/null || true
+            cmd_list "$@"
+            ;;
+        new|create|n)
+            shift
+            cmd_new "$@"
+            ;;
+        attach|a)
+            shift
+            cmd_attach "${@:-}"
+            ;;
+        kill|rm|k)
+            shift
+            cmd_kill "$@"
+            ;;
+        info|i)
+            shift
+            cmd_info "${@:-}"
+            ;;
+        status|s)
+            cmd_status
+            ;;
+        *)
+            # If it looks like a path, treat as "new <path>"
+            if [[ -d "$cmd" ]]; then
+                cmd_new "$@"
+            else
+                log_error "Unknown command: $cmd"
+                echo "Run 'am help' for usage"
+                exit 1
+            fi
+            ;;
+    esac
+}
+
+main "$@"
