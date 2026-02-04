@@ -106,13 +106,34 @@ cmd_list() {
         local result
         result=$(fzf_main)
 
-        if [[ "$result" == "__NEW_SESSION__" ]]; then
-            # User pressed Ctrl-N, create new session
-            cmd_new
+        if [[ "$result" == __NEW_SESSION__* ]]; then
+            # Parse: __NEW_SESSION__|directory|flags
+            local directory flags
+            directory=$(echo "$result" | cut -d'|' -f2)
+            flags=$(echo "$result" | cut -d'|' -f3-)
+
+            # Create new session with selected directory and flags
+            # shellcheck disable=SC2086
+            cmd_new_internal "$directory" $flags
         elif [[ -n "$result" ]]; then
             # Attach to selected session
             tmux_attach "$result"
         fi
+    fi
+}
+
+# Internal: create session with directory and flags (called from fzf_main)
+# Usage: cmd_new_internal <directory> [flags...]
+cmd_new_internal() {
+    local directory="$1"
+    shift
+    local agent_args=("$@")
+
+    local session_name
+    session_name=$(agent_launch "$directory" "claude" "" "${agent_args[@]}")
+
+    if [[ -n "$session_name" ]]; then
+        tmux_attach "$session_name"
     fi
 }
 

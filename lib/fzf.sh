@@ -89,6 +89,37 @@ fzf_pick_directory() {
     fi
 }
 
+# Pick agent flags using fzf multi-select
+# Usage: fzf_pick_flags
+# Returns: space-separated flags or empty
+fzf_pick_flags() {
+    local options="none (default)
+--resume (continue previous conversation)
+--continue (continue from last session in directory)
+--dangerously-skip-permissions (no confirmation prompts)"
+
+    local selected
+    selected=$(echo "$options" | fzf \
+        --ansi \
+        --multi \
+        --header="Select options (Tab to multi-select, Enter to confirm)" \
+        --preview="echo 'Selected options will be passed to claude'" \
+        --preview-window="up:1:wrap" \
+    )
+
+    # Parse selection into flags
+    local flags=""
+    while IFS= read -r line; do
+        case "$line" in
+            *--resume*) flags+=" --resume" ;;
+            *--continue*) flags+=" --continue" ;;
+            *--dangerously-skip-permissions*) flags+=" --dangerously-skip-permissions" ;;
+        esac
+    done <<< "$selected"
+
+    echo "$flags"
+}
+
 # Generate session list for fzf
 # Format: "session_name|display_name"
 # Usage: fzf_list_sessions
@@ -154,11 +185,9 @@ fzf_main() {
     local sessions
     sessions=$(fzf_list_sessions)
 
+    # If no sessions, add placeholder for new session
     if [[ -z "$sessions" ]]; then
-        echo "No agent sessions found." >&2
-        echo "" >&2
-        echo "Create a new session with: am new [directory]" >&2
-        return 0
+        sessions="__new__|➕ Create new session"
     fi
 
     # Build preview command - must use bash (not zsh) for declare -A and BASH_SOURCE
@@ -184,8 +213,9 @@ fzf_main() {
 ║    ?           Show this help                                ║
 ║                                                              ║
 ║  In tmux session                                             ║
-║    Ctrl-B d    Detach (return to shell)                      ║
-║    Ctrl-B [    Scroll mode (q to exit)                       ║
+║    Ctrl-Z a    Open am menu (popup)                          ║
+║    Ctrl-Z d    Detach (return to shell)                      ║
+║    Ctrl-Z [    Scroll mode (q to exit)                       ║
 ╚══════════════════════════════════════════════════════════════╝
 "
 
@@ -210,14 +240,23 @@ fzf_main() {
     key=$(echo "$selected" | head -n1)
     session_name=$(echo "$selected" | tail -n1 | cut -d'|' -f1)
 
-    # Handle expected keys
-    case "$key" in
-        ctrl-n)
-            # New session - return special code
-            echo "__NEW_SESSION__"
-            return 0
-            ;;
-    esac
+    # Handle new session request (either Ctrl-N or selecting the "new" option)
+    if [[ "$key" == "ctrl-n" || "$session_name" == "__new__" ]]; then
+        # Pick directory
+        local directory
+        directory=$(fzf_pick_directory)
+        if [[ -z "$directory" ]]; then
+            return 0  # Cancelled
+        fi
+
+        # Pick flags
+        local flags
+        flags=$(fzf_pick_flags)
+
+        # Return new session command
+        echo "__NEW_SESSION__|${directory}|${flags}"
+        return 0
+    fi
 
     # Attach to selected session
     if [[ -n "$session_name" ]]; then
