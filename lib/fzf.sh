@@ -83,8 +83,8 @@ fzf_main() {
         return 0
     fi
 
-    # Build preview command that sources all libs
-    local preview_cmd="source '$lib_dir/utils.sh' && source '$lib_dir/tmux.sh' && source '$lib_dir/registry.sh' && source '$lib_dir/agents.sh' && fzf_preview {1}"
+    # Build preview command - must use bash (not zsh) for declare -A and BASH_SOURCE
+    local src_libs="source '$lib_dir/utils.sh' && source '$lib_dir/tmux.sh' && source '$lib_dir/registry.sh' && source '$lib_dir/agents.sh' && source '$lib_dir/fzf.sh'"
 
     # Run fzf
     local selected
@@ -93,11 +93,11 @@ fzf_main() {
         --delimiter='|' \
         --with-nth=2 \
         --header="Agent Sessions | Enter:attach  Ctrl-N:new  Ctrl-X:kill  Ctrl-R:refresh  Ctrl-P:preview" \
-        --preview="$preview_cmd" \
+        --preview="bash -c '$src_libs && fzf_preview {1}'" \
         --preview-window="right:60%:wrap" \
-        --bind="ctrl-r:reload(source '$lib_dir/utils.sh' && source '$lib_dir/tmux.sh' && source '$lib_dir/registry.sh' && source '$lib_dir/agents.sh' && fzf_list_sessions)" \
+        --bind="ctrl-r:reload(bash -c '$src_libs && fzf_list_sessions')" \
         --bind="ctrl-p:toggle-preview" \
-        --bind="ctrl-x:execute-silent(source '$lib_dir/utils.sh' && source '$lib_dir/tmux.sh' && source '$lib_dir/registry.sh' && source '$lib_dir/agents.sh' && agent_kill {1})+reload(source '$lib_dir/utils.sh' && source '$lib_dir/tmux.sh' && source '$lib_dir/registry.sh' && source '$lib_dir/agents.sh' && fzf_list_sessions)" \
+        --bind="ctrl-x:execute-silent(bash -c '$src_libs && agent_kill {1}')+reload(bash -c '$src_libs && fzf_list_sessions')" \
         --expect="ctrl-n" \
     )
 
