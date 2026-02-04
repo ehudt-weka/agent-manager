@@ -11,6 +11,84 @@ SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"
 # Ensure fzf is available
 require_cmd fzf
 
+# Pick a directory using fzf
+# Uses zoxide if available, otherwise browses from home
+# Usage: fzf_pick_directory
+# Returns: selected directory path or empty if cancelled
+fzf_pick_directory() {
+    local selected=""
+
+    # Build list of directories
+    local dirs=""
+
+    # Option 1: Current directory
+    dirs=". (current directory)"$'\n'
+
+    # Option 2: Use zoxide if available (frecent directories)
+    if command -v zoxide &>/dev/null; then
+        local zoxide_dirs
+        zoxide_dirs=$(zoxide query -l 2>/dev/null | head -20)
+        if [[ -n "$zoxide_dirs" ]]; then
+            dirs+="$zoxide_dirs"$'\n'
+        fi
+    fi
+
+    # Option 3: Recent git repos from common locations
+    local search_paths=("$HOME/code" "$HOME/projects" "$HOME/src" "$HOME/dev" "$HOME/work")
+    for search_path in "${search_paths[@]}"; do
+        if [[ -d "$search_path" ]]; then
+            # Find directories with .git (limit depth and count)
+            local git_dirs
+            git_dirs=$(find "$search_path" -maxdepth 3 -type d -name ".git" 2>/dev/null | \
+                       sed 's/\/\.git$//' | head -20)
+            if [[ -n "$git_dirs" ]]; then
+                dirs+="$git_dirs"$'\n'
+            fi
+        fi
+    done
+
+    # Remove duplicates and empty lines
+    dirs=$(echo "$dirs" | awk '!seen[$0]++' | grep -v '^$')
+
+    # Run fzf
+    selected=$(echo "$dirs" | fzf \
+        --ansi \
+        --header="Select directory (or type path)" \
+        --preview='[[ -d {} ]] && ls -la {} 2>/dev/null | head -20 || echo "Current directory"' \
+        --preview-window="right:50%:wrap" \
+        --print-query \
+        --bind="ctrl-h:become(echo $HOME)" \
+    )
+
+    # Parse result - fzf --print-query outputs: query on line 1, selection on line 2
+    local query selection
+    query=$(echo "$selected" | head -n1)
+    selection=$(echo "$selected" | tail -n1)
+
+    # If selection is empty but query exists, use query as typed path
+    if [[ -z "$selection" && -n "$query" ]]; then
+        selection="$query"
+    fi
+
+    # Handle special case
+    if [[ "$selection" == ". (current directory)" ]]; then
+        selection="."
+    fi
+
+    # Expand ~ if present
+    selection="${selection/#\~/$HOME}"
+
+    # Validate directory exists
+    if [[ -n "$selection" && -d "$selection" ]]; then
+        echo "$selection"
+    elif [[ -n "$selection" ]]; then
+        log_error "Directory does not exist: $selection" >&2
+        echo ""
+    else
+        echo ""
+    fi
+}
+
 # Generate session list for fzf
 # Format: "session_name|display_name"
 # Usage: fzf_list_sessions

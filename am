@@ -145,6 +145,8 @@ cmd_new() {
             -h|--help)
                 echo "Usage: am new [options] [directory] [-- agent_args...]"
                 echo ""
+                echo "If no directory specified, opens interactive picker."
+                echo ""
                 echo "Options:"
                 echo "  -t, --type    Agent type (claude, gemini, aider)"
                 echo "  -n, --name    Task description"
@@ -152,8 +154,9 @@ cmd_new() {
                 echo "  --            Pass remaining args to agent command"
                 echo ""
                 echo "Examples:"
-                echo "  am new ~/project -- --resume    # Start claude with --resume"
-                echo "  am new -- --dangerously-skip-permissions"
+                echo "  am new                          # Interactive directory picker"
+                echo "  am new ~/project                # Specific directory"
+                echo "  am new ~/project -- --resume    # With agent args"
                 return 0
                 ;;
             -*)
@@ -167,8 +170,21 @@ cmd_new() {
         esac
     done
 
+    # If no directory specified and running interactively, offer picker
+    if [[ "$directory" == "." && -t 0 ]]; then
+        local picked
+        picked=$(fzf_pick_directory)
+        if [[ -n "$picked" ]]; then
+            directory="$picked"
+        elif [[ -z "$picked" ]]; then
+            # User cancelled
+            log_info "Cancelled"
+            return 0
+        fi
+    fi
+
     # Prompt for task description if not provided
-    if [[ -z "$task" ]]; then
+    if [[ -z "$task" && -t 0 ]]; then
         echo -n "Task description (optional): "
         read -r task
     fi
