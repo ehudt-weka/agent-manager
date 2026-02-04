@@ -89,33 +89,30 @@ fzf_pick_directory() {
     fi
 }
 
-# Pick agent flags using fzf multi-select
-# Usage: fzf_pick_flags
-# Returns: space-separated flags or empty
-fzf_pick_flags() {
-    local options="none (default)
---resume (continue previous conversation)
---continue (continue from last session in directory)
---dangerously-skip-permissions (no confirmation prompts)"
+# Pick session mode (new/resume/continue)
+# Usage: fzf_pick_mode
+# Returns: flags string (always includes --dangerously-skip-permissions)
+fzf_pick_mode() {
+    local options="New session
+Resume (--resume)
+Continue (--continue)"
 
     local selected
     selected=$(echo "$options" | fzf \
         --ansi \
-        --multi \
-        --header="Select options (Tab to multi-select, Enter to confirm)" \
-        --preview="echo 'Selected options will be passed to claude'" \
-        --preview-window="up:1:wrap" \
+        --no-multi \
+        --header="Select mode (Enter to confirm)" \
+        --height=8 \
+        --layout=reverse \
     )
 
-    # Parse selection into flags
-    local flags=""
-    while IFS= read -r line; do
-        case "$line" in
-            *--resume*) flags+=" --resume" ;;
-            *--continue*) flags+=" --continue" ;;
-            *--dangerously-skip-permissions*) flags+=" --dangerously-skip-permissions" ;;
-        esac
-    done <<< "$selected"
+    # Always include --dangerously-skip-permissions
+    local flags="--dangerously-skip-permissions"
+
+    case "$selected" in
+        *--resume*) flags+=" --resume" ;;
+        *--continue*) flags+=" --continue" ;;
+    esac
 
     echo "$flags"
 }
@@ -249,9 +246,9 @@ fzf_main() {
             return 0  # Cancelled
         fi
 
-        # Pick flags
+        # Pick mode (new/resume/continue)
         local flags
-        flags=$(fzf_pick_flags)
+        flags=$(fzf_pick_mode)
 
         # Return new session command
         echo "__NEW_SESSION__|${directory}|${flags}"
