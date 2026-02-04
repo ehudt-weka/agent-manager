@@ -86,18 +86,44 @@ fzf_main() {
     # Build preview command - must use bash (not zsh) for declare -A and BASH_SOURCE
     local src_libs="source '$lib_dir/utils.sh' && source '$lib_dir/tmux.sh' && source '$lib_dir/registry.sh' && source '$lib_dir/agents.sh' && source '$lib_dir/fzf.sh'"
 
+    # Help text for ? key
+    local help_text="
+╔══════════════════════════════════════════════════════════════╗
+║                    Agent Manager Help                        ║
+╠══════════════════════════════════════════════════════════════╣
+║  Navigation                                                  ║
+║    ↑/↓         Move selection                                ║
+║    Enter       Attach to selected session                    ║
+║    Esc/q       Exit without action                           ║
+║                                                              ║
+║  Actions                                                     ║
+║    Ctrl-N      Create new session                            ║
+║    Ctrl-X      Kill selected session                         ║
+║    Ctrl-R      Refresh session list                          ║
+║                                                              ║
+║  View                                                        ║
+║    Ctrl-P      Toggle preview panel                          ║
+║    ?           Show this help                                ║
+║                                                              ║
+║  In tmux session                                             ║
+║    Ctrl-B d    Detach (return to shell)                      ║
+║    Ctrl-B [    Scroll mode (q to exit)                       ║
+╚══════════════════════════════════════════════════════════════╝
+"
+
     # Run fzf
     local selected
     selected=$(echo "$sessions" | fzf \
         --ansi \
         --delimiter='|' \
         --with-nth=2 \
-        --header="Agent Sessions | Enter:attach  Ctrl-N:new  Ctrl-X:kill  Ctrl-R:refresh  Ctrl-P:preview" \
+        --header="Agent Sessions  ?:help  Enter:attach  ^N:new  ^X:kill" \
         --preview="bash -c '$src_libs && fzf_preview {1}'" \
         --preview-window="right:60%:wrap" \
         --bind="ctrl-r:reload(bash -c '$src_libs && fzf_list_sessions')" \
         --bind="ctrl-p:toggle-preview" \
         --bind="ctrl-x:execute-silent(bash -c '$src_libs && agent_kill {1}')+reload(bash -c '$src_libs && fzf_list_sessions')" \
+        --bind="?:preview(echo '$help_text')" \
         --expect="ctrl-n" \
     )
 
