@@ -138,7 +138,7 @@ truncate() {
 
 # Check if we're inside a tmux session
 in_tmux() {
-    [[ -n "$TMUX" ]]
+    [[ -n "${TMUX:-}" ]]
 }
 
 # Get current timestamp in ISO format
