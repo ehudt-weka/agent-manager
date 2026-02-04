@@ -167,19 +167,9 @@ fzf_preview() {
         return
     fi
 
-    # Capture terminal output first (we'll show it at the top, reversed order)
-    local terminal_output
-    terminal_output=$(tmux_capture_pane "$session_name" 200)
-
-    # Show last ~50 lines of terminal output (most recent) at the TOP
-    # This ensures user sees current state immediately
-    echo -e "${BOLD}═══ Recent Output ═══${RESET}"
-    echo "$terminal_output" | tail -n 50
-
-    # Then show session metadata below
-    echo ""
-    echo -e "${BOLD}═══ Session Info ═══${RESET}"
-    agent_info "$session_name"
+    # Capture terminal output - just show the raw capture
+    # Args: session_name, lines_to_capture, lines_to_skip_from_bottom
+    tmux_capture_pane "$session_name" 100 3
 }
 
 # Export functions for fzf subshells
