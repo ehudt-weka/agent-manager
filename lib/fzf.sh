@@ -169,7 +169,7 @@ fzf_preview() {
 
     # Capture terminal output - just show the raw capture
     # Args: session_name, lines_to_capture, lines_to_skip_from_bottom
-    tmux_capture_pane "$session_name" 30 0
+    tmux_capture_pane "$session_name" 35 0
 }
 
 # Export functions for fzf subshells
