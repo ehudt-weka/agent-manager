@@ -191,15 +191,44 @@ get_claude_session_title() {
         return 1
     fi
 
-    # Extract first user message content
-    local title
-    title=$(grep -m1 '"type":"user"' "$session_file" 2>/dev/null | \
-            jq -r '.message.content // empty' 2>/dev/null | \
-            head -1 | \
-            tr -d '\n' | \
+    # Extract first meaningful user message content
+    # Skip messages that are just system tags (local-command-caveat, command-name, etc.)
+    local raw_content=""
+    local line content cleaned
+    while IFS= read -r line; do
+        content=$(echo "$line" | jq -r '.message.content // empty' 2>/dev/null) || continue
+
+        # Skip if empty or just XML tags
+        [[ -z "$content" ]] && continue
+
+        # Remove XML tags and check if there's real content left
+        cleaned=$(echo "$content" | \
+            sed 's/<[^>]*>[^<]*<\/[^>]*>//g; s/<[^>]*>//g' | \
+            tr '\n' ' ' | \
             sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
-    if [[ -n "$title" ]]; then
-        truncate "$title" 60
+        if [[ -n "$cleaned" && ${#cleaned} -gt 10 ]]; then
+            raw_content="$cleaned"
+            break
+        fi
+    done < <(grep '"type":"user"' "$session_file" 2>/dev/null | head -10)
+
+    if [[ -z "$raw_content" ]]; then
+        return 1
+    fi
+
+    # Clean up the title:
+    # Remove URLs and extra spaces
+    local title
+    title=$(echo "$raw_content" | \
+            sed 's/https\?:\/\/[^ ]*//g' | \
+            sed 's/  */ /g')
+
+    # Extract first sentence (up to period, question mark, or exclamation)
+    local first_sentence
+    first_sentence=$(echo "$title" | sed 's/[.?!].*//' | head -c 80)
+
+    if [[ -n "$first_sentence" ]]; then
+        truncate "$first_sentence" 60
     fi
 }
