@@ -63,6 +63,15 @@ registry_get_field() {
     jq -r --arg name "$name" --arg field "$field" '.sessions[$name][$field] // empty' "$AM_REGISTRY"
 }
 
+# Get all fields for a session in one call (performance optimization)
+# Usage: registry_get_session <name>
+# Returns: JSON object with all session fields
+registry_get_session() {
+    local name="$1"
+    registry_init
+    jq -c --arg name "$name" '.sessions[$name] // {}' "$AM_REGISTRY"
+}
+
 # Update a session field
 # Usage: registry_update <name> <field> <value>
 registry_update() {
@@ -118,9 +127,28 @@ registry_exists() {
 }
 
 # Garbage collection: remove registry entries for sessions that no longer exist in tmux
-# Usage: registry_gc
+# Usage: registry_gc [force]
+# Runs at most once per 60 seconds unless force=1
 registry_gc() {
+    local force="${1:-0}"
     registry_init
+
+    # Time-based throttling: only run every 60 seconds
+    local gc_marker="$AM_DIR/.gc_last"
+    local now
+    now=$(date +%s)
+
+    if [[ "$force" != "1" && -f "$gc_marker" ]]; then
+        local last_gc
+        last_gc=$(cat "$gc_marker" 2>/dev/null || echo 0)
+        if (( now - last_gc < 60 )); then
+            echo "0"
+            return 0
+        fi
+    fi
+
+    # Update marker
+    echo "$now" > "$gc_marker"
 
     local removed=0
     local name

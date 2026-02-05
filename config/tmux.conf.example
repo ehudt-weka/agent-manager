@@ -18,10 +18,11 @@ set -g base-index 1
 setw -g pane-base-index 1
 
 # Agent manager popup: Ctrl-z a
-bind a display-popup -E -w 90% -h 80% "am"
+# Use bash directly for faster startup (skips shell initialization)
+bind a display-popup -E -w 90% -h 80% "bash $HOME/code/tools/agent-manager/am"
 
 # Custom command: ":am" opens agent manager in popup
-set -s command-alias[100] am='display-popup -E -w 90% -h 80% "am"'
+set -s command-alias[100] am='display-popup -E -w 90% -h 80% "bash $HOME/code/tools/agent-manager/am"'
 
 # Pane border - double lines with bright color
 set -g pane-border-status off

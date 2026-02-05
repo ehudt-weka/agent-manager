@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# preview - Fast standalone preview for fzf
+# Usage: preview <session_name>
+# Designed to be fast by avoiding library sourcing
+
+set -euo pipefail
+
+session_name="${1:-}"
+
+if [[ -z "$session_name" ]]; then
+    echo "No session selected"
+    exit 0
+fi
+
+# Check session exists
+if ! tmux has-session -t "$session_name" 2>/dev/null; then
+    echo "Session not found: $session_name"
+    exit 0
+fi
+
+# Get session title from Claude JSONL (simplified, inline)
+AM_REGISTRY="${HOME}/.agent-manager/sessions.json"
+if [[ -f "$AM_REGISTRY" ]]; then
+    directory=$(jq -r --arg name "$session_name" '.sessions[$name].directory // empty' "$AM_REGISTRY" 2>/dev/null)
+
+    if [[ -n "$directory" ]]; then
+        # Convert directory to Claude's project path format
+        project_path="${directory//\//-}"
+        project_path="${project_path//./-}"
+        claude_project_dir="$HOME/.claude/projects/$project_path"
+
+        if [[ -d "$claude_project_dir" ]]; then
+            session_file=$(command ls -t "$claude_project_dir"/*.jsonl 2>/dev/null | head -1)
+            if [[ -n "$session_file" && -f "$session_file" ]]; then
+                # Extract first meaningful user message
+                title=""
+                while IFS= read -r line; do
+                    content=$(echo "$line" | jq -r '.message.content // empty' 2>/dev/null) || continue
+                    [[ -z "$content" ]] && continue
+                    # Remove XML tags and check for real content
+                    cleaned=$(echo "$content" | sed 's/<[^>]*>[^<]*<\/[^>]*>//g; s/<[^>]*>//g' | tr '\n' ' ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                    if [[ -n "$cleaned" && ${#cleaned} -gt 10 ]]; then
+                        # Truncate and clean
+                        title=$(echo "$cleaned" | sed 's/https\?:\/\/[^ ]*//g; s/  */ /g; s/[.?!].*//' | head -c 60)
+                        break
+                    fi
+                done < <(grep '"type":"user"' "$session_file" 2>/dev/null | head -10)
+
+                if [[ -n "$title" ]]; then
+                    echo -e "\033[1;36m📝 $title\033[0m"
+                    echo ""
+                fi
+            fi
+        fi
+    fi
+fi
+
+# Capture terminal output from the agent pane (window 1, pane 1)
+# -p: print to stdout
+# -e: include escape sequences (colors)
+# No -S flag = capture visible area only
+output=$(tmux capture-pane -t "$session_name:1.1" -p -e 2>/dev/null || \
+         tmux capture-pane -t "$session_name" -p -e 2>/dev/null)
+
+# Show last 33 lines of captured content
+if [[ -n "$output" ]]; then
+    echo "$output" | tail -n 33
+else
+    echo "(Unable to capture)"
+fi

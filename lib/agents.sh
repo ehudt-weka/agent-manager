@@ -132,16 +132,19 @@ agent_launch() {
 
 # Get display name for a session (for fzf listing)
 # Usage: agent_display_name <session_name>
-# Returns: "dirname/branch [type] (Xm ago) title"
+# Returns: "dirname/branch [type] (Xm ago)"
+# Note: Title extraction moved to preview for faster startup
 agent_display_name() {
     local session_name="$1"
 
-    # Get metadata from registry
-    local directory branch agent_type task
-    directory=$(registry_get_field "$session_name" "directory")
-    branch=$(registry_get_field "$session_name" "branch")
-    agent_type=$(registry_get_field "$session_name" "agent_type")
-    task=$(registry_get_field "$session_name" "task")
+    # Get all metadata fields in ONE jq call (critical for performance)
+    local fields
+    fields=$(jq -r --arg name "$session_name" \
+        '.sessions[$name] | "\(.directory // "")\t\(.branch // "")\t\(.agent_type // "")"' \
+        "$AM_REGISTRY" 2>/dev/null)
+
+    local directory branch agent_type
+    IFS=$'\t' read -r directory branch agent_type <<< "$fields"
 
     # Get activity from tmux
     local activity
@@ -173,22 +176,6 @@ agent_display_name() {
 
     # Add activity
     display="${display} ($(format_time_ago "$idle"))"
-
-    # Try to get Claude session title, fall back to task
-    local title=""
-    if [[ -n "$directory" ]]; then
-        title=$(get_claude_session_title "$directory" 2>/dev/null)
-    fi
-
-    # Use task if no Claude title found
-    if [[ -z "$title" && -n "$task" ]]; then
-        title="$task"
-    fi
-
-    # Add title (truncated)
-    if [[ -n "$title" ]]; then
-        display="${display} \"$(truncate "$title" 50)\""
-    fi
 
     echo "$display"
 }

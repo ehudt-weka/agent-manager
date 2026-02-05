@@ -167,16 +167,28 @@ fzf_preview() {
         return
     fi
 
+    # Show session title if available (moved from list for faster startup)
+    local directory
+    directory=$(registry_get_field "$session_name" "directory")
+    if [[ -n "$directory" ]]; then
+        local title
+        title=$(get_claude_session_title "$directory" 2>/dev/null)
+        if [[ -n "$title" ]]; then
+            echo -e "\033[1;36m📝 $title\033[0m"
+            echo ""
+        fi
+    fi
+
     # Capture terminal output - just show the raw capture
     # Args: session_name, lines_to_capture, lines_to_skip_from_bottom
-    tmux_capture_pane "$session_name" 35 0
+    tmux_capture_pane "$session_name" 33 0
 }
 
 # Export functions for fzf subshells
 _fzf_export_functions() {
     export AM_DIR AM_REGISTRY AM_SESSION_PREFIX
     export -f fzf_preview agent_info agent_display_name
-    export -f registry_get_field registry_init
+    export -f registry_get_field registry_get_session registry_init
     export -f tmux_capture_pane tmux_session_exists tmux_get_activity tmux_get_created
     export -f format_time_ago format_duration dir_basename truncate abspath epoch_now get_claude_session_title
     export -f require_cmd log_info log_error log_warn log_success am_init
@@ -200,7 +212,10 @@ fzf_main() {
         sessions="__new__|➕ Create new session"
     fi
 
-    # Build preview command - must use bash (not zsh) for declare -A and BASH_SOURCE
+    # Build preview command - use standalone script for speed
+    local preview_cmd="$lib_dir/preview"
+
+    # Fallback for reload commands that need full library access
     local src_libs="source '$lib_dir/utils.sh' && source '$lib_dir/tmux.sh' && source '$lib_dir/registry.sh' && source '$lib_dir/agents.sh' && source '$lib_dir/fzf.sh'"
 
     # Help text for ? key
@@ -220,6 +235,8 @@ fzf_main() {
 ║                                                              ║
 ║  View                                                        ║
 ║    Ctrl-P      Toggle preview panel                          ║
+║    Ctrl-J/K    Scroll preview down/up                        ║
+║    Ctrl-D/U    Scroll preview half-page                      ║
 ║    ?           Show this help                                ║
 ║                                                              ║
 ║  In tmux session                                             ║
@@ -237,8 +254,10 @@ fzf_main() {
         --delimiter='|' \
         --with-nth=2 \
         --header="Agent Sessions  ?:help  Enter:attach  ^N:new  ^X:kill" \
-        --preview="bash -c '$src_libs && fzf_preview {1}'" \
-        --preview-window="bottom:75%:wrap" \
+        --preview="$preview_cmd {1}" \
+        --preview-window="bottom:75%" \
+        --bind="ctrl-j:preview-down,ctrl-k:preview-up" \
+        --bind="ctrl-d:preview-half-page-down,ctrl-u:preview-half-page-up" \
         --bind="ctrl-r:reload(bash -c '$src_libs && fzf_list_sessions')" \
         --bind="ctrl-p:toggle-preview" \
         --bind="ctrl-x:execute-silent(bash -c '$src_libs && agent_kill {1}')+reload(bash -c '$src_libs && fzf_list_sessions')" \
