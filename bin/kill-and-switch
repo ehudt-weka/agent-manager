@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Kill a session and switch to the last used one if we killed the current session
+
+target="$1"
+if [[ -z "$target" ]]; then
+    exit 1
+fi
+
+# Get current attached session
+current=$(tmux display-message -p '#{session_name}' 2>/dev/null)
+
+# Source agent_kill function
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$SCRIPT_DIR/lib/utils.sh"
+source "$SCRIPT_DIR/lib/tmux.sh"
+source "$SCRIPT_DIR/lib/registry.sh"
+source "$SCRIPT_DIR/lib/agents.sh"
+
+# If killing the current session, switch to another one first
+if [[ "$target" == "$current" ]]; then
+    # Find the next best session (most recent that isn't the target)
+    next=$(tmux list-sessions -F '#{session_activity} #{session_name}' 2>/dev/null \
+        | grep ' am-' \
+        | grep -v " ${target}$" \
+        | sort -rn \
+        | head -1 \
+        | cut -d' ' -f2)
+
+    if [[ -n "$next" ]]; then
+        tmux switch-client -t "$next"
+    fi
+fi
+
+# Now kill the target session
+agent_kill "$target"

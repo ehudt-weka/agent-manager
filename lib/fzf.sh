@@ -261,7 +261,7 @@ fzf_main() {
         --bind="ctrl-d:preview-half-page-down,ctrl-u:preview-half-page-up" \
         --bind="ctrl-r:reload(bash -c '$src_libs && fzf_list_sessions')" \
         --bind="ctrl-p:toggle-preview" \
-        --bind="ctrl-x:execute-silent(bash -c '$src_libs && agent_kill {1}')+reload(bash -c '$src_libs && fzf_list_sessions')" \
+        --bind="ctrl-x:execute-silent($lib_dir/../bin/kill-and-switch {1})+reload(bash -c '$src_libs && fzf_list_sessions')" \
         --bind="?:preview(echo '$help_text')" \
         --expect="ctrl-n" \
     )

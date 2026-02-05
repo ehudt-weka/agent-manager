@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Switch to the most recently active am-* session (excluding current)
+
+cur=$(tmux display-message -p '#{session_name}')
+tgt=$(tmux list-sessions -F '#{session_activity} #{session_name}' 2>/dev/null \
+    | grep ' am-' \
+    | grep -v " ${cur}$" \
+    | sort -rn \
+    | head -1 \
+    | cut -d' ' -f2)
+
+if [[ -n "$tgt" ]]; then
+    tmux switch-client -t "$tgt"
+fi
