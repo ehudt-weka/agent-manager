@@ -47,7 +47,7 @@ Stores metadata that tmux doesn't track natively:
   "sessions": {
     "am-abc123": {
       "name": "am-abc123",
-      "directory": "home/user/code/myapp",
+      "directory": "/home/user/code/myapp",
       "branch": "feature/auth",
       "agent_type": "claude",
       "created_at": "2024-01-15T10:30:00Z",
@@ -97,7 +97,7 @@ fzf preview will show:
 
 ```
 ┌─ Preview ────────────────────────────────────────────┐
-│ 📁 home/user/code/myapp                           │
+│ 📁 /home/user/code/myapp                           │
 │ 🌿 feature/auth                                      │
 │ 🤖 claude | Started: 2h 15m ago | Last active: 30s   │
 │ ─────────────────────────────────────────────────────│
